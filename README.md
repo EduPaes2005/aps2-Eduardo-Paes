@@ -172,20 +172,22 @@ Modela o ciclo de vida da entidade `CandidaturaMatch`, utilizando subestados com
 stateDiagram-v2
     [*] --> Recebida : criarIntencaoMatch() [vagaAberta == true] / gerarIdRastreabilidade()
 
-    state Recebida {
-        Recebida : entry / registrarTimestampCriacao()
-        Recebida : do / aguardarJanelaProcessamento()
-        Recebida : exit / bloquearEdicaoCurriculoSnapshot()
-    }
+    note right of Recebida
+        entry / registrarTimestampCriacao()
+        do / aguardarJanelaProcessamento()
+        exit / bloquearEdicaoCurriculoSnapshot()
+    end note
 
     Recebida --> EmConciliacao : iniciarProcessamento() [candidatoAtivo == true] / alocarWorkerPool()
     Recebida --> CanceladaPorInconsistencia : validarPreRequisitos() [vagaEncerrada == true] / notificarCancelamento()
 
-    state EmConciliacao {
-        EmConciliacao : entry / inicializarContextoTransacional()
-        EmConciliacao : do / monitorarTimeoutExecucao()
-        EmConciliacao : exit / persistirMetricasTelemetria()
+    note right of EmConciliacao
+        entry / inicializarContextoTransacional()
+        do / monitorarTimeoutExecucao()
+        exit / persistirMetricasTelemetria()
+    end note
 
+    state EmConciliacao {
         [*] --> ValidandoElegibilidadeSGA
         ValidandoElegibilidadeSGA --> CalculandoVetoresCompetencia : confirmarDadosSGA() [matriculaAtiva == true && frequencia >= 75.0] / anexarHistoricoOficial()
         CalculandoVetoresCompetencia --> PonderandoScoreFinal : processarEmbeddings() [vetoresValidos == true] / calcularDistanciaCosseno()
@@ -199,11 +201,11 @@ stateDiagram-v2
     FalhaIntegracaoExterna --> EmConciliacao : reprocessarJobFilaDLQ() [sgaDisponivel == true] / incrementarContadorRetry()
     FalhaIntegracaoExterna --> CanceladaPorInconsistencia : abortarJob() [tempoEsperaHoras > 24] / registrarIncidenteOperacional()
 
-    state AptaParaEntrevista {
-        AptaParaEntrevista : entry / reservarPosicaoRanking()
-        AptaParaEntrevista : do / contabilizarPrazoRespostaEmpresa()
-        AptaParaEntrevista : exit / atualizarAuditoriaStatus()
-    }
+    note right of AptaParaEntrevista
+        entry / reservarPosicaoRanking()
+        do / contabilizarPrazoRespostaEmpresa()
+        exit / atualizarAuditoriaStatus()
+    end note
 
     AptaParaEntrevista --> ConvocadaSelecao : aprovarPreSelecaoEmpresa() [dentroDoPrazo == true] / enviarConviteEntrevista()
     AptaParaEntrevista --> ExpiradaPorInatividade : verificarTTL() [diasSemInteracao > 15] / liberarPosicaoRanking()
