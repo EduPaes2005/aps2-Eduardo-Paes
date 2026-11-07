@@ -1,0 +1,46 @@
+stateDiagram-v2
+    [*] --> Recebida : criarIntencaoMatch() [vagaAberta == true] / gerarIdRastreabilidade()
+
+    state Recebida {
+        Recebida : entry / registrarTimestampCriacao()
+        Recebida : do / aguardarJanelaProcessamento()
+        Recebida : exit / bloquearEdicaoCurriculoSnapshot()
+    }
+
+    Recebida --> EmConciliacao : iniciarProcessamento() [candidatoAtivo == true] / alocarWorkerPool()
+    Recebida --> CanceladaPorInconsistencia : validarPreRequisitos() [vagaEncerrada == true] / notificarCancelamento()
+
+    state EmConciliacao {
+        EmConciliacao : entry / inicializarContextoTransacional()
+        EmConciliacao : do / monitorarTimeoutExecucao()
+        EmConciliacao : exit / persistirMetricasTelemetria()
+
+        [*] --> ValidandoElegibilidadeSGA
+        ValidandoElegibilidadeSGA --> CalculandoVetoresCompetencia : confirmarDadosSGA() [matriculaAtiva == true && frequencia >= 75.0] / anexarHistoricoOficial()
+        CalculandoVetoresCompetencia --> PonderandoScoreFinal : processarEmbeddings() [vetoresValidos == true] / calcularDistanciaCosseno()
+        PonderandoScoreFinal --> [*] : concluirCalculo() [pesosNormalizados == 1.0] / consolidarNota()
+    }
+
+    EmConciliacao --> AptaParaEntrevista : finalizarConciliacao() [scoreFinal >= 70.0] / emitirEventoMatchAprovado()
+    EmConciliacao --> RetidaBancoTalentos : finalizarConciliacao() [scoreFinal < 70.0] / gerarDiagnosticoGaps()
+    EmConciliacao --> FalhaIntegracaoExterna : capturarExcecaoSGA() [tentativasRetry >= 3] / abrirCircuitBreaker()
+
+    FalhaIntegracaoExterna --> EmConciliacao : reprocessarJobFilaDLQ() [sgaDisponivel == true] / incrementarContadorRetry()
+    FalhaIntegracaoExterna --> CanceladaPorInconsistencia : abortarJob() [tempoEsperaHoras > 24] / registrarIncidenteOperacional()
+
+    state AptaParaEntrevista {
+        AptaParaEntrevista : entry / reservarPosicaoRanking()
+        AptaParaEntrevista : do / contabilizarPrazoRespostaEmpresa()
+        AptaParaEntrevista : exit / atualizarAuditoriaStatus()
+    }
+
+    AptaParaEntrevista --> ConvocadaSelecao : aprovarPreSelecaoEmpresa() [dentroDoPrazo == true] / enviarConviteEntrevista()
+    AptaParaEntrevista --> ExpiradaPorInatividade : verificarTTL() [diasSemInteracao > 15] / liberarPosicaoRanking()
+
+    ConvocadaSelecao --> ContratadaEstagio : formalizarTermoCompromisso() [documentacaoAprovada == true] / emitirContratoFAB()
+    ConvocadaSelecao --> RetidaBancoTalentos : encerrarEntrevistaSemAprovacao() [feedbackRegistrado == true] / atualizarHistoricoSelecao()
+
+    ContratadaEstagio --> [*]
+    RetidaBancoTalentos --> [*]
+    ExpiradaPorInatividade --> [*]
+    CanceladaPorInconsistencia --> [*]
