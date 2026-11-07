@@ -1,0 +1,51 @@
+flowchart TD
+    subgraph Raia_Empresa ["Raia 1: Portal da Empresa / Recrutador"]
+        Inicio(("● Início")) --> PublicarVaga["Configurar Pesos de Competências e Disparar Conciliação"]
+        VisualizarRanking["Visualizar Ranking de Candidatos e Convocar para Entrevista"] --> FimSucesso(("◉ Fim"))
+    end
+
+    subgraph Raia_Backend ["Raia 2: Motor de Conciliação Back-End (MatchEngine)"]
+        PublicarVaga --> CarregarVaga["Carregar Matriz de Competências da Vaga (Hard/Soft Skills)"]
+        CarregarVaga --> ConsultarSGA["Solicitar Validação Acadêmica e Matriz Curricular"]
+
+        DecisaoElegivel{"Candidato Elegível?"}
+        DecisaoElegivel -- "[matriculaAtiva == false || frequencia < 75.0]" --> DescartarCandidato["Descartar da Conciliação e Registrar Motivo"]
+        DescartarCandidato --> FimDescarte(("◉ Fim"))
+
+        DecisaoElegivel -- "[matriculaAtiva == true && frequencia >= 75.0]" --> ForkBar[["═══ BARRA DE FORK (Execução Paralela) ═══"]]
+
+        ForkBar --> CalcHard["Calcular Similaridade Vetorial de Hard Skills (pgvector)"]
+        ForkBar --> CalcSoft["Avaliar Aderência de Soft Skills e Projetos Práticos"]
+        ForkBar --> CalcGeo["Calcular Índice de Mobilidade / Turno Escolar"]
+
+        CalcHard --> JoinBar[["═══ BARRA DE JOIN (Sincronização) ═══"]]
+        CalcSoft --> JoinBar
+        CalcGeo --> JoinBar
+
+        JoinBar --> ConsolidarScore["Consolidar Score Ponderado Final (0 a 100)"]
+        ConsolidarScore --> DecisaoCorte{"Atingiu Nota de Corte?"}
+
+        DecisaoCorte -- "[scoreFinal >= 70.0]" --> ClassificarApto["Atualizar Estado para APTO_ENTREVISTA"]
+        DecisaoCorte -- "[scoreFinal < 70.0]" --> ClassificarRetido["Atualizar Estado para RETIDO_BANCO_TALENTOS"]
+
+        ClassificarApto --> ForkNotificacao[["═══ BARRA DE FORK (Pós-Processamento) ═══"]]
+        ForkNotificacao --> GerarRanking["Ordenar Candidato no Ranking da Vaga"]
+        GerarRanking --> JoinNotificacao[["═══ BARRA DE JOIN ═══"]]
+        JoinNotificacao --> VisualizarRanking
+    end
+
+    subgraph Raia_Externo ["Raia 3: Serviços Externos (SGA UniSENAI & Mensageria RabbitMQ)"]
+        ConsultarSGA --> ValidarAPI["Validar RA e Histórico no WebService SGA UniSENAI"]
+        ValidarAPI --> DecisaoElegivel
+
+        ForkNotificacao --> PublicarEventoApto["Publicar Evento Assíncrono (RabbitMQ): Notificar Estudante"]
+        PublicarEventoApto --> JoinNotificacao
+
+        ClassificarRetido --> GerarTrilha["Publicar Evento Assíncrono: Recomendar Microcertificações SENAI"]
+        GerarTrilha --> FimRetido(("◉ Fim"))
+    end
+
+    style ForkBar fill:#1e293b,stroke:#0f172a,color:#ffffff,stroke-width:2px
+    style JoinBar fill:#1e293b,stroke:#0f172a,color:#ffffff,stroke-width:2px
+    style ForkNotificacao fill:#1e293b,stroke:#0f172a,color:#ffffff,stroke-width:2px
+    style JoinNotificacao fill:#1e293b,stroke:#0f172a,color:#ffffff,stroke-width:2px
