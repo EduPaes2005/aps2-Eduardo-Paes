@@ -1,0 +1,64 @@
+sequenceDiagram
+    autonumber
+    actor Recrutador as Recrutador / Empresa
+    participant API as MatchController
+    participant Engine as MatchEngineService
+    participant SGA as SgaIntegrationAdapter
+    participant Repo as CompetenciaRepository
+    participant Broker as EventBrokerPublisher
+
+    Recrutador->>API: solicitarConciliacao(SolicitacaoMatchDTO)
+    activate API
+    API->>Engine: executarConciliacaoVaga(SolicitacaoMatchDTO)
+    activate Engine
+
+    Engine->>Repo: buscarRequisitosVaga(vagaId)
+    activate Repo
+    Repo-->>Engine: VagaCompetenciasDTO
+    deactivate Repo
+
+    Engine->>Repo: listarCandidatosPreElegiveis(cursoId, semestreMinimo)
+    activate Repo
+    Repo-->>Engine: List~CandidatoBaseDTO~
+    deactivate Repo
+
+    loop Para cada CandidatoBaseDTO na lista de pré-elegíveis
+        Engine->>SGA: validarSituacaoAcademica(raEstudante)
+        activate SGA
+
+        alt Matrícula ativa e frequência regular no SGA
+            SGA-->>Engine: HistoricoAcademicoDTO (ativo=true, freq>=75%)
+            deactivate SGA
+
+            Engine->>Repo: calcularSimilaridadeVetorial(VagaCompetenciasDTO, HistoricoAcademicoDTO)
+            activate Repo
+            Repo-->>Engine: ResultadoScoreDTO (scoreHardSkills, scoreSoftSkills, scoreFinal)
+            deactivate Repo
+
+            alt scoreFinal >= 70.0 (Candidato Apto para a Vaga)
+                Engine->>Repo: salvarResultadoMatch(MatchConsolidadoDTO)
+                activate Repo
+                Repo-->>Engine: MatchPersistidoDTO (status="APTO_ENTREVISTA")
+                deactivate Repo
+
+                Engine-)Broker: publicarEventoMatchAprovado(EventoMatchConcluidoDTO)
+                Note right of Broker: Mensageria Assíncrona (RabbitMQ)<br/>Dispara notificação ao aluno e log de auditoria
+            else scoreFinal < 70.0 (Retido no Banco de Talentos)
+                Engine->>Repo: registrarRetencaoTalento(MatchConsolidadoDTO)
+                activate Repo
+                Repo-->>Engine: MatchPersistidoDTO (status="RETIDO_BANCO_TALENTOS")
+                deactivate Repo
+
+                Engine-)Broker: publicarSugestaoTrilhaCapacitacao(EventoGapCompetenciaDTO)
+            end
+
+        else Matrícula inativa ou falha de timeout no SGA
+            SGA-->>Engine: ErroValidacaoAcademicaDTO (codigoErro, mensagem)
+            Engine-)Broker: publicarAlertaInconsistenciaSGA(EventoAuditoriaErroDTO)
+        end
+    end
+
+    Engine-->>API: RelatorioConciliacaoVagaDTO (totalProcessados, listaAptosDTO)
+    deactivate Engine
+    API-->>Recrutador: HTTP 200 OK (RelatorioConciliacaoVagaDTO)
+    deactivate API
